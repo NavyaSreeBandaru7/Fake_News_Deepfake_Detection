@@ -1,0 +1,281 @@
+# Docker Compose Configuration for Fake News & Deepfake Detection System
+# ======================================================================
+
+version: '3.8'
+
+services:
+  # Main application service
+  fake-news-detector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - PYTHON_VERSION=3.9
+        - TORCH_VERSION=2.0.0
+    image: fake-news-detector:latest
+    container_name: fake-news-detector-app
+    ports:
+      - "8501:8501"  # Streamlit
+      - "7860:7860"  # Gradio
+      - "8000:8000"  # FastAPI
+    environment:
+      - PYTHONPATH=/app
+      - TORCH_HOME=/app/cache/torch
+      - TRANSFORMERS_CACHE=/app/cache/transformers
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+      - ./outputs:/app/outputs
+    networks:
+      - fake-news-network
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: fake-news-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - fake-news-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-fake_news_redis_pass}
+
+  # PostgreSQL for data storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: fake-news-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-fake_news_db}
+      - POSTGRES_USER=${POSTGRES_USER:-fake_news_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fake_news_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - fake-news-network
+    restart: unless-stopped
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: fake-news-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    networks:
+      - fake-news-network
+    depends_on:
+      - fake-news-detector
+    restart: unless-stopped
+
+  # Model training service (optional)
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile.trainer
+    image: fake-news-trainer:latest
+    container_name: fake-news-trainer
+    environment:
+      - PYTHONPATH=/app
+      - CUDA_VISIBLE_DEVICES=0,1  # Use multiple GPUs if available
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+    networks:
+      - fake-news-network
+    depends_on:
+      - postgres
+      - redis
+    restart: "no"  # Run once for training
+    profiles:
+      - training
+
+  # Monitoring with Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: fake-news-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - fake-news-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: fake-news-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - fake-news-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Elasticsearch for logging
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: fake-news-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - fake-news-network
+    restart: unless-stopped
+    profiles:
+      - logging
+
+  # Kibana for log visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: fake-news-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - fake-news-network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    profiles:
+      - logging
+
+  # Logstash for log processing
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.8.0
+    container_name: fake-news-logstash
+    volumes:
+      - ./logging/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./logs:/usr/share/logstash/logs
+    networks:
+      - fake-news-network
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    profiles:
+      - logging
+
+  # MinIO for object storage
+  minio:
+    image: minio/minio:latest
+    container_name: fake-news-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - fake-news-network
+    restart: unless-stopped
+    profiles:
+      - storage
+
+  # Jupyter notebook for development
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile.jupyter
+    image: fake-news-jupyter:latest
+    container_name: fake-news-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-fake_news_token}
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./src:/app/src
+    networks:
+      - fake-news-network
+    restart: unless-stopped
+    profiles:
+      - development
+
+networks:
+  fake-news-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  minio_data:
+    driver: local
+
+# Environment variable template
+# Create a .env file with these variables:
+#
+# POSTGRES_DB=fake_news_db
+# POSTGRES_USER=fake_news_user
+# POSTGRES_PASSWORD=your_secure_password
+# REDIS_PASSWORD=your_redis_password
+# GRAFANA_USER=admin
+# GRAFANA_PASSWORD=your_grafana_password
+# MINIO_USER=minioadmin
+# MINIO_PASSWORD=your_minio_password
+# JUPYTER_TOKEN=your_jupyter_token
