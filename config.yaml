@@ -1,0 +1,273 @@
+# Advanced Fake News & Deepfake Detection System Configuration
+# ============================================================
+
+# Model Configuration
+model:
+  # Text detection model settings
+  text_model:
+    name: "roberta-large"  # Options: bert-base-uncased, roberta-base, roberta-large, distilbert-base-uncased
+    max_length: 512
+    batch_size: 16
+    learning_rate: 2e-5
+    num_epochs: 3
+    dropout_rate: 0.3
+    hidden_dim: 1024  # Adjust based on model
+    num_classes: 2
+    warmup_steps: 500
+    weight_decay: 0.01
+    
+  # Image detection model settings
+  image_model:
+    architecture: "custom_cnn"  # Options: custom_cnn, resnet50, efficientnet
+    input_size: [224, 224]
+    batch_size: 32
+    learning_rate: 1e-4
+    num_epochs: 10
+    dropout_rate: 0.5
+    pretrained: true
+    
+  # Multi-agent coordination
+  ensemble:
+    text_weight: 0.7
+    image_weight: 0.3
+    confidence_threshold: 0.75
+
+# Data Processing Configuration
+data:
+  # Dataset settings
+  dataset:
+    text_column: "text"
+    label_column: "label"
+    min_text_length: 50
+    max_text_length: 5000
+    remove_duplicates: true
+    balance_classes: true
+    test_size: 0.2
+    validation_size: 0.1
+    random_seed: 42
+    
+  # Data augmentation
+  augmentation:
+    enabled: true
+    augmentation_factor: 1.5
+    techniques:
+      - synonym_replacement
+      - random_insertion
+      - random_swap
+      - random_deletion
+    synonym_probability: 0.1
+    insertion_probability: 0.1
+    swap_probability: 0.1
+    deletion_probability: 0.1
+    
+  # Feature engineering
+  features:
+    extract_linguistic: true
+    extract_tfidf: true
+    tfidf_max_features: 10000
+    tfidf_ngram_range: [1, 3]
+    use_sentiment: true
+    use_pos_tags: true
+    use_named_entities: true
+
+# Training Configuration
+training:
+  # General training settings
+  device: "auto"  # Options: auto, cpu, cuda, mps
+  mixed_precision: true
+  gradient_clipping: 1.0
+  early_stopping:
+    enabled: true
+    patience: 3
+    min_delta: 0.001
+    
+  # Optimization
+  optimizer: "adamw"  # Options: adam, adamw, sgd
+  scheduler: "linear"  # Options: linear, cosine, polynomial
+  gradient_accumulation_steps: 1
+  
+  # Checkpointing
+  save_checkpoints: true
+  checkpoint_dir: "./checkpoints"
+  save_every_n_epochs: 1
+  keep_best_only: true
+  
+  # Logging
+  logging:
+    wandb:
+      enabled: false
+      project_name: "fake-news-detection"
+      entity: "your-username"
+    tensorboard:
+      enabled: true
+      log_dir: "./logs"
+    console_log_level: "INFO"
+
+# Web Interface Configuration
+web:
+  streamlit:
+    port: 8501
+    host: "0.0.0.0"
+    theme: "light"  # Options: light, dark
+    page_title: "AI Fake News Detector"
+    page_icon: "🔍"
+    layout: "wide"
+    sidebar_state: "expanded"
+    
+  gradio:
+    port: 7860
+    host: "0.0.0.0"
+    share: false
+    theme: "soft"
+    title: "AI Fake News & Deepfake Detector"
+    description: "Advanced AI-powered detection system"
+    
+  api:
+    enabled: true
+    port: 8000
+    host: "0.0.0.0"
+    reload: false
+    workers: 1
+    cors_origins: ["*"]
+
+# Paths Configuration
+paths:
+  # Data directories
+  data_dir: "./data"
+  raw_data_dir: "./data/raw"
+  processed_data_dir: "./data/processed"
+  sample_data_dir: "./data/sample"
+  
+  # Model directories
+  models_dir: "./models"
+  text_model_dir: "./models/text_detector"
+  image_model_dir: "./models/image_detector"
+  
+  # Output directories
+  outputs_dir: "./outputs"
+  logs_dir: "./logs"
+  visualizations_dir: "./visualizations"
+  reports_dir: "./reports"
+  
+  # Cache directories
+  cache_dir: "./cache"
+  downloads_dir: "./downloads"
+
+# Dataset Sources
+datasets:
+  kaggle:
+    enabled: true
+    datasets:
+      - "clmentbisaillon/fake-and-real-news-dataset"
+      - "c/fake-news"
+      - "hassanamin/textdb3"
+    download_dir: "./data/kaggle"
+    
+  huggingface:
+    enabled: true
+    datasets:
+      - "fake_news"
+      - "liar"
+    cache_dir: "./cache/huggingface"
+    
+  custom:
+    enabled: true
+    csv_files: []
+    json_files: []
+
+# Evaluation Configuration
+evaluation:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1_score
+    - roc_auc
+    - confusion_matrix
+    
+  cross_validation:
+    enabled: false
+    k_folds: 5
+    stratified: true
+    
+  test_sets:
+    holdout_test: true
+    external_test: false
+    benchmark_datasets: []
+
+# Production Configuration
+production:
+  # Performance settings
+  batch_size: 32
+  max_concurrent_requests: 10
+  request_timeout: 30
+  cache_predictions: true
+  cache_ttl: 3600  # seconds
+  
+  # Security
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    burst_size: 10
+    
+  authentication:
+    enabled: false
+    api_key_required: false
+    
+  # Monitoring
+  monitoring:
+    enabled: true
+    metrics_endpoint: "/metrics"
+    health_check_endpoint: "/health"
+    
+  # Scaling
+  auto_scaling:
+    enabled: false
+    min_replicas: 1
+    max_replicas: 5
+    target_cpu_utilization: 70
+
+# Advanced Features
+advanced:
+  # Multi-language support
+  multilingual:
+    enabled: false
+    supported_languages: ["en", "es", "fr", "de"]
+    translation_service: "google"  # Options: google, azure, aws
+    
+  # Explainability
+  explainability:
+    enabled: true
+    methods: ["attention", "lime", "shap"]
+    save_explanations: true
+    
+  # Active learning
+  active_learning:
+    enabled: false
+    uncertainty_threshold: 0.6
+    batch_size: 100
+    
+  # Federated learning
+  federated_learning:
+    enabled: false
+    aggregation_method: "fedavg"
+    communication_rounds: 10
+
+# Development Configuration
+development:
+  debug_mode: true
+  verbose_logging: true
+  profile_performance: false
+  save_intermediate_results: true
+  
+  # Testing
+  testing:
+    run_tests: true
+    test_coverage_threshold: 80
+    integration_tests: true
+    
+  # Code quality
+  code_quality:
+    format_code: true
+    lint_code: true
+    type_checking: true
